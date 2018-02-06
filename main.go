@@ -112,7 +112,7 @@ func main() {
 	fmt.Printf("Syscalls detected (total: %v): %v\n", len(syscalls), syscallsList)
 
 	profile := specs.LinuxSeccomp{
-		DefaultAction: specs.ActKill,
+		DefaultAction: specs.ActErrno,
 		Architectures: []specs.Arch{specs.ArchX86_64},
 		Syscalls: []specs.LinuxSyscall{
 			specs.LinuxSyscall{
