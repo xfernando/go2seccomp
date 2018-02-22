@@ -42,20 +42,23 @@ yields this profile:
             "names": [
                 "close",
                 "fcntl",
+                "mmap",
                 "munmap",
+                "readlinkat",
                 "write"
             ],
             "action": "SCMP_ACT_ALLOW"
         }
     ]
 }
+
 ```
 
 Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
 
 ```json
 {
-    "defaultAction": "SCMP_ACT_KILL",
+    "defaultAction": "SCMP_ACT_ERRNO",
     "architectures": [
         "SCMP_ARCH_X86_64"
     ],
@@ -63,6 +66,7 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
         {
             "names": [
                 "accept",
+                "accept4",
                 "bind",
                 "chdir",
                 "chroot",
@@ -76,6 +80,7 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
                 "exit_group",
                 "fchdir",
                 "fchmod",
+                "fchmodat",
                 "fchown",
                 "fcntl",
                 "fstat",
@@ -89,6 +94,7 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
                 "getppid",
                 "getrandom",
                 "getsockname",
+                "getsockopt",
                 "getuid",
                 "ioctl",
                 "kill",
@@ -96,19 +102,29 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
                 "lseek",
                 "lstat",
                 "mkdirat",
+                "mmap",
                 "mount",
                 "munmap",
+                "openat",
                 "pipe",
                 "pipe2",
                 "prctl",
+                "pread64",
                 "ptrace",
+                "pwrite64",
                 "read",
+                "readlinkat",
+                "recvfrom",
                 "recvmsg",
+                "renameat",
+                "sendfile",
                 "sendmsg",
+                "sendto",
                 "setgid",
                 "setgroups",
                 "setpgid",
                 "setsid",
+                "setsockopt",
                 "setuid",
                 "shutdown",
                 "socket",
@@ -116,6 +132,8 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
                 "symlinkat",
                 "unlinkat",
                 "unshare",
+                "wait4",
+                "waitid",
                 "write",
                 "writev"
             ],
@@ -123,6 +141,7 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
         }
     ]
 }
+
 ```
 
 ## How it works
