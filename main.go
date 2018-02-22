@@ -89,7 +89,7 @@ func main() {
 		instruction := scanner.Text()
 		previousInstructions[lineCount%previousInstructionsBufferSize] = instruction
 
-		if strings.Contains(instruction, "CALL syscall.Syscall(SB)") || strings.Contains(instruction, "CALL syscall.Syscall(SB)") ||
+		if strings.Contains(instruction, "CALL syscall.Syscall(SB)") || strings.Contains(instruction, "CALL syscall.Syscall6(SB)") ||
 			strings.Contains(instruction, "CALL syscall.RawSyscall(SB)") || strings.Contains(instruction, "CALL syscall.RawSyscall6(SB)") {
 			id, err := findSyscallID(previousInstructions, lineCount)
 			if err != nil {
