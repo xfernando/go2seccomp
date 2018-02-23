@@ -115,6 +115,20 @@ func isRuntimeSyscall(instruction, currentFunction string) bool {
 		!strings.Contains(currentFunction, "syscall.RawSyscall")
 }
 
+// Got these from https://github.com/moby/moby/issues/22252
+// Even if they are not found in the binary, they are needed for starting the container
+func getDefaultSyscalls() map[int64]bool {
+	syscalls := make(map[int64]bool)
+	// futex
+	syscalls[202] = true
+	// stat
+	syscalls[4] = true
+	// execve
+	syscalls[59] = true
+
+	return syscalls
+}
+
 func main() {
 	flag.Parse()
 
@@ -146,7 +160,7 @@ func main() {
 	// keep a few of the past instructions in a buffer so we can look back and find the syscall ID
 	previousInstructions := make([]string, previousInstructionsBufferSize)
 	lineCount := 0
-	syscalls := make(map[int64]bool)
+	syscalls := getDefaultSyscalls()
 
 	fmt.Println("Scanning disassembled binary for syscall IDs")
 	currentFunction := ""

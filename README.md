@@ -32,52 +32,64 @@ func main() {
 yields this profile:
 
 ```json
-{
-    "defaultAction": "SCMP_ACT_ERRNO",
-    "architectures": [
-        "SCMP_ARCH_X86_64"
-    ],
-    "syscalls": [
-        {
-            "names": [
-                "arch_prctl",
-                "brk",
-                "clone",
-                "close",
-                "epoll_create",
-                "epoll_create1",
-                "epoll_ctl",
-                "epoll_wait",
-                "exit",
-                "exit_group",
-                "fcntl",
-                "futex",
-                "getpid",
-                "gettid",
-                "kill",
-                "madvise",
-                "mincore",
-                "mmap",
-                "munmap",
-                "open",
-                "pselect6",
-                "read",
-                "readlinkat",
-                "rt_sigaction",
-                "rt_sigprocmask",
-                "rt_sigreturn",
-                "sched_getaffinity",
-                "sched_yield",
-                "setitimer",
-                "sigaltstack",
-                "tkill",
-                "write"
-            ],
-            "action": "SCMP_ACT_ALLOW"
-        }
-    ]
-}
+ {
+     "defaultAction": "SCMP_ACT_ERRNO",
+     "architectures": [
+         "SCMP_ARCH_X86_64"
+     ],
+     "syscalls": [
+         {
+             "names": [
+                 "arch_prctl",
+                 "brk",
+                 "clone",
+                 "close",
+                 "epoll_create",
+                 "epoll_create1",
+                 "epoll_ctl",
+                 "epoll_wait",
+                 "execve",
+                 "exit",
+                 "exit_group",
+                 "fcntl",
+                 "futex",
+                 "getpid",
+                 "gettid",
+                 "kill",
+                 "madvise",
+                 "mincore",
+                 "mmap",
+                 "munmap",
+                 "open",
+                 "pselect6",
+                 "read",
+                 "readlinkat",
+                 "rt_sigaction",
+                 "rt_sigprocmask",
+                 "rt_sigreturn",
+                 "sched_getaffinity",
+                 "sched_yield",
+                 "setitimer",
+                 "sigaltstack",
+                 "stat",
+                 "tkill",
+                 "write"
+             ],
+             "action": "SCMP_ACT_ALLOW"
+         }
+     ]
+ }
 ```
+
+With the generated profile we can then start a docker container like this (assuming you built an image for the code above
+with the tag `helloworld`):
+
+```bash
+docker run --security-opt="no-new-privileges" --security-opt="seccomp=profile.json" helloworld
+```
+
+There's a script on [examples/helloworld](./examples/helloworld) called `build-and-run.sh` that takes this hello world example,
+builds the binary, generates the seccomp profile, builds the docker image and runs the image with the generated profile:
 
 Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
 
@@ -232,14 +244,27 @@ uses syscalls directly. The file [sys_linux_amd64.s](https://github.com/golang/g
 The first version of `go2seccomp` didn't take those into account, so a lot of syscalls needed were missing, but are now properly accounted for.
 
 Since it now analyzes actual `SYSCALL` calls, this removed the limitations that only those syscalls made through the `syscall` package
-would be discovered. And now, syscalls made in C code through `cgo` can also be discovered when analyzing static builds.
+would be discovered. Now even syscalls made in C code through `cgo` should be discovered when analyzing static builds.
+
+### Default syscalls
+
+When I tried running containers with profiles `go2seccomp` generated they didn't start with different error messages at times (even the basic helloworld).
+After some digging, I found this [issue](https://github.com/moby/moby/issues/22252) on the moby project, where I found that some syscalls
+need to be enabled on the seccomp profile because docker needs them to start the container, even if they're needed for the binary the container runs.
+
+The syscalls that need to be enabled by default are:
+
+* `execve`
+* `futex`
+* `stat`
 
 ## Limitations
 
-There are several limitations to this:
+There are some limitations in go2seccomp:
 
 * If the syscall ID passed to the syscall functions are defined at runtime, they won't be detected
-  * Though a warning will be displayed when we find a call to one of the 4 syscall funcs and can't parse its ID
+  * Though a warning will be displayed when we find a syscall whose ID can't be parsed
+* If you use go plugins, syscalls from the plugins probably won't be detected
 
 More details about limitations can be seen at @jessfraz [keynote at FOSDEM](https://www.youtube.com/watch?v=7mzbIOtcIaQ)
 around 30 minutes in.
