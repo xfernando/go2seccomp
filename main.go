@@ -79,10 +79,10 @@ func findSyscallIDx86(previouInstructions []string, curPos int) (int, error) {
 	for i < previousInstructionsBufferSize {
 		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
 
-		isMOVQ := strings.Index(instruction, "MOVL") != -1
+		isMOVL := strings.Index(instruction, "MOVL") != -1
 		isBaseSPAddress := strings.Index(instruction, ", 0(SP)") != -1
 
-		if isMOVQ && isBaseSPAddress {
+		if isMOVL && isBaseSPAddress {
 			syscallIDBeginning := strings.Index(instruction, "$")
 			if syscallIDBeginning == -1 {
 				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
@@ -109,10 +109,10 @@ func findSyscallIDARM(previouInstructions []string, curPos int) (int, error) {
 	for i < previousInstructionsBufferSize {
 		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
 
-		isMOVQ := strings.Index(instruction, "MOVW") != -1
+		isMOVW := strings.Index(instruction, "MOVW") != -1
 		isBaseSPAddress := strings.Index(instruction, ", 0(SP)") != -1
-		fmt.Println("isMOVQ : ", isMOVQ, "isBaseSPAddress : ", isBaseSPAddress)
-		if isMOVQ && isBaseSPAddress {
+		fmt.Println("isMOVW : ", isMOVW, "isBaseSPAddress : ", isBaseSPAddress)
+		if isMOVW && isBaseSPAddress {
 			syscallIDBeginning := strings.Index(instruction, "$")
 			if syscallIDBeginning == -1 {
 				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
