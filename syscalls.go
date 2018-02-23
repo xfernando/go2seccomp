@@ -1,7 +1,7 @@
 package main
 
 // reference: https://github.com/seccomp/libseccomp/blob/master/src/arch-x86_64-syscalls.c
-var syscallIDtoName = map[int]string{
+var syscallIDtoName = map[int64]string{
 	0:   "read",
 	1:   "write",
 	2:   "open",

@@ -40,18 +40,43 @@ yields this profile:
     "syscalls": [
         {
             "names": [
+                "arch_prctl",
+                "brk",
+                "clone",
                 "close",
+                "epoll_create",
+                "epoll_create1",
+                "epoll_ctl",
+                "epoll_wait",
+                "exit",
+                "exit_group",
                 "fcntl",
+                "futex",
+                "getpid",
+                "gettid",
+                "kill",
+                "madvise",
+                "mincore",
                 "mmap",
                 "munmap",
+                "open",
+                "pselect6",
+                "read",
                 "readlinkat",
+                "rt_sigaction",
+                "rt_sigprocmask",
+                "rt_sigreturn",
+                "sched_getaffinity",
+                "sched_yield",
+                "setitimer",
+                "sigaltstack",
+                "tkill",
                 "write"
             ],
             "action": "SCMP_ACT_ALLOW"
         }
     ]
 }
-
 ```
 
 Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
@@ -67,7 +92,9 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
             "names": [
                 "accept",
                 "accept4",
+                "arch_prctl",
                 "bind",
+                "brk",
                 "chdir",
                 "chroot",
                 "clone",
@@ -75,6 +102,10 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
                 "connect",
                 "dup",
                 "dup2",
+                "epoll_create",
+                "epoll_create1",
+                "epoll_ctl",
+                "epoll_wait",
                 "execve",
                 "exit",
                 "exit_group",
@@ -86,6 +117,7 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
                 "fstat",
                 "fsync",
                 "ftruncate",
+                "futex",
                 "getcwd",
                 "getdents64",
                 "getgid",
@@ -95,21 +127,26 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
                 "getrandom",
                 "getsockname",
                 "getsockopt",
+                "gettid",
                 "getuid",
                 "ioctl",
                 "kill",
                 "listen",
                 "lseek",
                 "lstat",
+                "madvise",
+                "mincore",
                 "mkdirat",
                 "mmap",
                 "mount",
                 "munmap",
+                "open",
                 "openat",
                 "pipe",
                 "pipe2",
                 "prctl",
                 "pread64",
+                "pselect6",
                 "ptrace",
                 "pwrite64",
                 "read",
@@ -117,19 +154,27 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
                 "recvfrom",
                 "recvmsg",
                 "renameat",
+                "rt_sigaction",
+                "rt_sigprocmask",
+                "rt_sigreturn",
+                "sched_getaffinity",
+                "sched_yield",
                 "sendfile",
                 "sendmsg",
                 "sendto",
                 "setgid",
                 "setgroups",
+                "setitimer",
                 "setpgid",
                 "setsid",
                 "setsockopt",
                 "setuid",
                 "shutdown",
+                "sigaltstack",
                 "socket",
                 "stat",
                 "symlinkat",
+                "tkill",
                 "unlinkat",
                 "unshare",
                 "wait4",
@@ -141,7 +186,6 @@ Running `go2seccomp` on the `kubectl` 1.9.0 binary yields the following profile:
         }
     ]
 }
-
 ```
 
 ## How it works
@@ -181,14 +225,21 @@ of the `getcwd` syscall.
 
 We collect all syscall IDs using this method and generate a seccomp profile json as output.
 
+### Go Runtime syscalls
+
+Go's `runtime` package doesn't use the functions on the `syscall` package. Instead, it has a lot of assembly code that
+uses syscalls directly. The file [sys_linux_amd64.s](https://github.com/golang/go/blob/master/src/runtime/sys_linux_amd64.s) contains most of those.
+The first version of `go2seccomp` didn't take those into account, so a lot of syscalls needed were missing, but are now properly accounted for.
+
+Since it now analyzes actual `SYSCALL` calls, this removed the limitations that only those syscalls made through the `syscall` package
+would be discovered. And now, syscalls made in C code through `cgo` can also be discovered when analyzing static builds.
+
 ## Limitations
 
 There are several limitations to this:
 
-* This only detects syscalls that are called through the functions defined in the `syscall` package
 * If the syscall ID passed to the syscall functions are defined at runtime, they won't be detected
   * Though a warning will be displayed when we find a call to one of the 4 syscall funcs and can't parse its ID
-* If your code uses cgo and invokes a syscall directly, it won't be detected
 
 More details about limitations can be seen at @jessfraz [keynote at FOSDEM](https://www.youtube.com/watch?v=7mzbIOtcIaQ)
 around 30 minutes in.
