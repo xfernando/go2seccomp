@@ -38,39 +38,6 @@ func findSyscallID(arch specs.Arch, previouInstructions []string, curPos int) (i
 	return i, err
 }
 
-// findSyscallIDx86_64 goes back from the call until it finds an instruction with the format
-// MOVQ $ID, 0(SP), which is the one that pushes the syscall ID onto the base address
-// at the SP register
-func findSyscallIDx86_64(previouInstructions []string, curPos int) (int64, error) {
-	i := 0
-
-	for i < previousInstructionsBufferSize {
-		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
-
-		isMOVQ := strings.Index(instruction, "MOVQ") != -1
-		isBaseSPAddress := strings.Index(instruction, ", 0(SP)") != -1
-
-		if isMOVQ && isBaseSPAddress {
-			syscallIDBeginning := strings.Index(instruction, "$")
-			if syscallIDBeginning == -1 {
-				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
-			}
-			syscallIDEnd := strings.Index(instruction, ", 0(SP)")
-
-			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
-			id, err := strconv.ParseInt(hex, 0, 64)
-
-			if err != nil {
-				return -1, fmt.Errorf("Error parsing hex id: %v", err)
-			}
-			return id, nil
-		}
-		i++
-		curPos--
-	}
-	return -1, fmt.Errorf("Failed to find syscall ID")
-}
-
 func findRuntimeSyscallID(previouInstructions []string, curPos int) (int64, error) {
 	i := 0
 
@@ -127,22 +94,76 @@ func isSyscallPkgCall(instruction string) bool {
 
 func isRuntimeSyscall(instruction, currentFunction string) bool {
 	// there are SYSCALL instructions in each of the 4 functions on the syscall package, so we ignore those
-	return strings.Contains(instruction, "SYSCALL") && !strings.Contains(currentFunction, "syscall.Syscall") &&
+	return (strings.Contains(instruction, "SYSCALL") || strings.Contains(instruction, "INT $0x80")) &&
+		!strings.Contains(currentFunction, "syscall.Syscall") &&
 		!strings.Contains(currentFunction, "syscall.RawSyscall")
 }
 
 // Got these from https://github.com/moby/moby/issues/22252
 // Even if they are not found in the binary, they are needed for starting the container
-func getDefaultSyscalls() map[int64]bool {
+func getDefaultSyscalls(arch specs.Arch) map[int64]bool {
 	syscalls := make(map[int64]bool)
-	// futex
-	syscalls[202] = true
-	// stat
-	syscalls[4] = true
-	// execve
-	syscalls[59] = true
+	switch arch {
+
+	case specs.ArchX86_64:
+		// futex
+		syscalls[202] = true
+		// stat
+		syscalls[4] = true
+		// execve
+		syscalls[59] = true
+	case specs.ArchX86:
+		// futex
+		syscalls[240] = true
+		// stat
+		syscalls[106] = true
+		// execve
+		syscalls[11] = true
+	case specs.ArchARM:
+		// futex
+		syscalls[240] = true
+		// stat
+		syscalls[106] = true
+		// execve
+		syscalls[11] = true
+	default:
+		log.Fatalln(arch, "not supported")
+	}
 
 	return syscalls
+}
+
+// findSyscallIDx86_64 goes back from the call until it finds an instruction with the format
+// MOVQ $ID, 0(SP), which is the one that pushes the syscall ID onto the base address
+// at the SP register
+func findSyscallIDx86_64(previouInstructions []string, curPos int) (int64, error) {
+	i := 0
+
+	for i < previousInstructionsBufferSize {
+		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
+
+		isMOVQ := strings.Index(instruction, "MOVQ") != -1
+		isBaseSPAddress := strings.Index(instruction, ", 0(SP)") != -1
+
+		if isMOVQ && isBaseSPAddress {
+			syscallIDBeginning := strings.Index(instruction, "$")
+			if syscallIDBeginning == -1 {
+				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
+			}
+			syscallIDEnd := strings.Index(instruction, ", 0(SP)")
+
+			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
+			id, err := strconv.ParseInt(hex, 0, 64)
+
+			if err != nil {
+				return -1, fmt.Errorf("Error parsing hex id: %v", err)
+			}
+			return id, nil
+		}
+		i++
+		curPos--
+	}
+	return -1, fmt.Errorf("Failed to find syscall ID")
 }
 
 // findSyscallIDx86 goes back from the call until it finds an instruction with the format
@@ -182,7 +203,7 @@ func findSyscallIDARM(previouInstructions []string, curPos int) (int64, error) {
 
 	for i < previousInstructionsBufferSize {
 		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
-
+		fmt.Println(instruction)
 		isMOVW := strings.Index(instruction, "MOVW") != -1
 		isBaseSPAddress := strings.Index(instruction, ", R0") != -1
 		// fmt.Println("isMOVW : ", isMOVW, "isBaseSPAddress : ", isBaseSPAddress)
@@ -214,7 +235,7 @@ func getSyscallList(disassambled *os.File, arch specs.Arch) []string {
 	// keep a few of the past instructions in a buffer so we can look back and find the syscall ID
 	previousInstructions := make([]string, previousInstructionsBufferSize)
 	lineCount := 0
-	syscalls := getDefaultSyscalls()
+	syscalls := getDefaultSyscalls(arch)
 
 	// j := getCallOpByArch(arch)
 
