@@ -4,14 +4,14 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
-var syscallIDtoName = map[specs.Arch]map[int]string{
+var syscallIDtoName = map[specs.Arch]map[int64]string{
 	specs.ArchX86_64: syscallIDtoNamex86_64,
 	specs.ArchX86:    syscallIDtoNamex86,
 	specs.ArchARM:    syscallIDtoNameARM,
 }
 
 // reference: https://github.com/seccomp/libseccomp/blob/master/src/arch-x86-syscalls.c
-var syscallIDtoNamex86 = map[int]string{
+var syscallIDtoNamex86 = map[int64]string{
 	0:   "restart_syscall",
 	1:   "exit",
 	2:   "fork",
@@ -359,7 +359,7 @@ var syscallIDtoNamex86 = map[int]string{
 	348: "process_vm_writev",
 	349: "kcmp",
 }
-var syscallIDtoNameARM = map[int]string{
+var syscallIDtoNameARM = map[int64]string{
 	0:   "restart_syscall",
 	1:   "exit",
 	2:   "fork",
@@ -708,7 +708,7 @@ var syscallIDtoNameARM = map[int]string{
 }
 
 // reference: https://github.com/seccomp/libseccomp/blob/master/src/arch-x86_64-syscalls.c
-var syscallIDtoNamex86_64 = map[int]string{
+var syscallIDtoNamex86_64 = map[int64]string{
 	0:   "read",
 	1:   "write",
 	2:   "open",
