@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 func openElf(filename string) *elf.File {
@@ -117,4 +118,69 @@ func getCallOpByArch(arch specs.Arch) string {
 	}
 
 	return j
+}
+
+func parseFunctionName(instruction string) string {
+	texts := strings.Split(instruction, " ")
+	currentFunction := texts[1]
+	if verbose {
+		fmt.Printf("Entering function %v\n", currentFunction)
+	}
+	return currentFunction
+}
+
+func isSyscallPkgCall(instruction string) bool {
+	return strings.Contains(instruction, "CALL syscall.Syscall(SB)") || strings.Contains(instruction, "CALL syscall.Syscall6(SB)") ||
+		strings.Contains(instruction, "CALL syscall.RawSyscall(SB)") || strings.Contains(instruction, "CALL syscall.RawSyscall6(SB)")
+}
+
+func isRuntimeSyscall(arch specs.Arch, instruction, currentFunction string) bool {
+	// SYSCALL => x86_64, INT 0x80 => x86, SVC or SWI => ARM
+	var isRuntimeSC bool
+	switch arch {
+	case specs.ArchX86:
+		isRuntimeSC = (strings.Contains(instruction, "INT $0x80") || strings.Contains(instruction, "SYSENTER"))
+	case specs.ArchX86_64:
+		isRuntimeSC = strings.Contains(instruction, "SYSCALL") &&
+			!strings.Contains(currentFunction, "syscall.Syscall") &&
+			!strings.Contains(currentFunction, "syscall.RawSyscall")
+	case specs.ArchARM:
+		isRuntimeSC = strings.Contains(instruction, "SVC $0") || strings.Contains(instruction, "SWI $0")
+	}
+	// there are SYSCALL instructions in each of the 4 functions on the syscall package, so we ignore those
+	return isRuntimeSC
+}
+
+// Got these from https://github.com/moby/moby/issues/22252
+// Even if they are not found in the binary, they are needed for starting the container
+func getDefaultSyscalls(arch specs.Arch) map[int64]bool {
+	syscalls := make(map[int64]bool)
+	switch arch {
+
+	case specs.ArchX86_64:
+		// futex
+		syscalls[202] = true
+		// stat
+		syscalls[4] = true
+		// execve
+		syscalls[59] = true
+	case specs.ArchX86:
+		// futex
+		syscalls[240] = true
+		// stat
+		syscalls[106] = true
+		// execve
+		syscalls[11] = true
+	case specs.ArchARM:
+		// futex
+		syscalls[240] = true
+		// stat
+		syscalls[106] = true
+		// execve
+		syscalls[11] = true
+	default:
+		log.Fatalln(arch, "not supported")
+	}
+
+	return syscalls
 }
