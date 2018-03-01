@@ -38,7 +38,25 @@ func findSyscallID(arch specs.Arch, previouInstructions []string, curPos int) (i
 	return i, err
 }
 
-func findRuntimeSyscallID(previouInstructions []string, curPos int) (int64, error) {
+func findRuntimeSyscallID(arch specs.Arch, previouInstructions []string, curPos int) (int64, error) {
+	var i int64
+	var err error
+
+	switch arch {
+	case specs.ArchX86_64:
+		i, err = findRuntimeSyscallIDx86_64(previouInstructions, curPos)
+	case specs.ArchX86:
+		i, err = findRuntimeSyscallIDx86_64(previouInstructions, curPos) // Same as x86_64 ?
+	case specs.ArchARM:
+		i, err = findRuntimeSyscallIDARM(previouInstructions, curPos)
+	default:
+		log.Fatalln(arch, "is not supported")
+	}
+
+	return i, err
+}
+
+func findRuntimeSyscallIDx86_64(previouInstructions []string, curPos int) (int64, error){
 	i := 0
 
 	for i < previousInstructionsBufferSize {
@@ -78,6 +96,35 @@ func findRuntimeSyscallID(previouInstructions []string, curPos int) (int64, erro
 	return -1, fmt.Errorf("Failed to find syscall ID")
 }
 
+func findRuntimeSyscallIDARM(previouInstructions []string, curPos int) (int64, error){
+	i := 0
+
+	for i < previousInstructionsBufferSize {
+		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
+		isR7 := strings.Index(instruction, ", R7") != -1
+		isNotReg := strings.Index(instruction, "),") == -1 // get the "(R15)," ending in MOVW 0x2c(R15), R7
+
+		if isR7 && isNotReg{
+			syscallIDBeginning := strings.Index(instruction, "$")
+			if syscallIDBeginning == -1 {
+				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
+			}
+			syscallIDEnd := strings.Index(instruction, ", R7")
+
+			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
+			id, err := strconv.ParseInt(hex, 0, 64)
+
+			if err != nil {
+				return -1, fmt.Errorf("Error parsing hex id: %v", err)
+			}
+			return id, nil
+		}
+		i++
+		curPos--
+	}
+	return -1, fmt.Errorf("Failed to find syscall ID")
+}
+
 func parseFunctionName(instruction string) string {
 	texts := strings.Split(instruction, " ")
 	currentFunction := texts[1]
@@ -92,11 +139,21 @@ func isSyscallPkgCall(instruction string) bool {
 		strings.Contains(instruction, "CALL syscall.RawSyscall(SB)") || strings.Contains(instruction, "CALL syscall.RawSyscall6(SB)")
 }
 
-func isRuntimeSyscall(instruction, currentFunction string) bool {
-	// there are SYSCALL instructions in each of the 4 functions on the syscall package, so we ignore those
-	return (strings.Contains(instruction, "SYSCALL") || strings.Contains(instruction, "INT $0x80")) &&
+func isRuntimeSyscall(arch specs.Arch, instruction, currentFunction string) bool {
+	// SYSCALL => x86_64, INT 0x80 => x86, SVC or SWI => ARM
+	var isRuntimeSC bool
+	switch arch{
+	case specs.ArchX86:
+		isRuntimeSC = (strings.Contains(instruction, "INT $0x80") || strings.Contains(instruction, "SYSENTER"))
+	case specs.ArchX86_64:
+		isRuntimeSC = strings.Contains(instruction, "SYSCALL") &&
 		!strings.Contains(currentFunction, "syscall.Syscall") &&
 		!strings.Contains(currentFunction, "syscall.RawSyscall")
+	case specs.ArchARM:
+		isRuntimeSC = strings.Contains(instruction, "SVC $0") || strings.Contains(instruction, "SWI $0")
+	}
+	// there are SYSCALL instructions in each of the 4 functions on the syscall package, so we ignore those
+	return isRuntimeSC
 }
 
 // Got these from https://github.com/moby/moby/issues/22252
@@ -261,8 +318,8 @@ func getSyscallList(disassambled *os.File, arch specs.Arch) []string {
 			syscalls[id] = true
 		}
 		// the runtime package doesn't use the functions on the syscall package, instead it uses SYSCALL directly
-		if isRuntimeSyscall(instruction, currentFunction) {
-			id, err := findRuntimeSyscallID(previousInstructions, lineCount)
+		if isRuntimeSyscall(arch, instruction, currentFunction) {
+			id, err := findRuntimeSyscallID(arch, previousInstructions, lineCount)
 			if err != nil {
 				log.Printf("Failed to find syscall ID for line %v: \n\t%v\n\treason: %v\n", lineCount+1, instruction, err)
 				lineCount++
