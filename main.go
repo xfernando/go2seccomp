@@ -2,17 +2,14 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"log"
 	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // TODO add a verbose flag and do a proper verbose mode
@@ -22,40 +19,44 @@ var verbose = false
 // have found MOVs to 0(SP) as far as 10 instructions behind, so 15 seems like a safe number
 const previousInstructionsBufferSize = 15
 
-// findSyscallID goes back from the call until it finds an instruction with the format
-// MOVQ $ID, 0(SP), which is the one that pushes the syscall ID onto the base address
-// at the SP register
-func findSyscallID(previouInstructions []string, curPos int) (int64, error) {
-	i := 0
+// wrapper for each findSyscallID by arch
+func findSyscallID(arch specs.Arch, previouInstructions []string, curPos int) (int64, error) {
+	var i int64
+	var err error
 
-	for i < previousInstructionsBufferSize {
-		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
-
-		isMOVQ := strings.Index(instruction, "MOVQ") != -1
-		isBaseSPAddress := strings.Index(instruction, ", 0(SP)") != -1
-
-		if isMOVQ && isBaseSPAddress {
-			syscallIDBeginning := strings.Index(instruction, "$")
-			if syscallIDBeginning == -1 {
-				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
-			}
-			syscallIDEnd := strings.Index(instruction, ", 0(SP)")
-
-			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
-			id, err := strconv.ParseInt(hex, 0, 64)
-
-			if err != nil {
-				return -1, fmt.Errorf("Error parsing hex id: %v", err)
-			}
-			return id, nil
-		}
-		i++
-		curPos--
+	switch arch {
+	case specs.ArchX86_64:
+		i, err = findSyscallIDx86_64(previouInstructions, curPos)
+	case specs.ArchX86:
+		i, err = findSyscallIDx86(previouInstructions, curPos)
+	case specs.ArchARM:
+		i, err = findSyscallIDARM(previouInstructions, curPos)
+	default:
+		log.Fatalln(arch, "is not supported")
 	}
-	return -1, fmt.Errorf("Failed to find syscall ID")
+
+	return i, err
 }
 
-func findRuntimeSyscallID(previouInstructions []string, curPos int) (int64, error) {
+func findRuntimeSyscallID(arch specs.Arch, previouInstructions []string, curPos int) (int64, error) {
+	var i int64
+	var err error
+
+	switch arch {
+	case specs.ArchX86_64:
+		i, err = findRuntimeSyscallIDx86_64(previouInstructions, curPos)
+	case specs.ArchX86:
+		i, err = findRuntimeSyscallIDx86_64(previouInstructions, curPos) // Same as x86_64 ?
+	case specs.ArchARM:
+		i, err = findRuntimeSyscallIDARM(previouInstructions, curPos)
+	default:
+		log.Fatalln(arch, "is not supported")
+	}
+
+	return i, err
+}
+
+func findRuntimeSyscallIDx86_64(previouInstructions []string, curPos int) (int64, error) {
 	i := 0
 
 	for i < previousInstructionsBufferSize {
@@ -95,74 +96,138 @@ func findRuntimeSyscallID(previouInstructions []string, curPos int) (int64, erro
 	return -1, fmt.Errorf("Failed to find syscall ID")
 }
 
-func parseFunctionName(instruction string) string {
-	texts := strings.Split(instruction, " ")
-	currentFunction := texts[1]
-	if verbose {
-		fmt.Printf("Entering function %v\n", currentFunction)
+func findRuntimeSyscallIDARM(previouInstructions []string, curPos int) (int64, error) {
+	i := 0
+
+	for i < previousInstructionsBufferSize {
+		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
+		isR7 := strings.Index(instruction, ", R7") != -1
+		isNotReg := strings.Index(instruction, "),") == -1 // get the "(R15)," ending in MOVW 0x2c(R15), R7
+
+		if isR7 && isNotReg {
+			syscallIDBeginning := strings.Index(instruction, "$")
+			if syscallIDBeginning == -1 {
+				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
+			}
+			syscallIDEnd := strings.Index(instruction, ", R7")
+
+			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
+			id, err := strconv.ParseInt(hex, 0, 64)
+
+			if err != nil {
+				return -1, fmt.Errorf("Error parsing hex id: %v", err)
+			}
+			return id, nil
+		}
+		i++
+		curPos--
 	}
-	return currentFunction
+	return -1, fmt.Errorf("Failed to find syscall ID")
 }
 
-func isSyscallPkgCall(instruction string) bool {
-	return strings.Contains(instruction, "CALL syscall.Syscall(SB)") || strings.Contains(instruction, "CALL syscall.Syscall6(SB)") ||
-		strings.Contains(instruction, "CALL syscall.RawSyscall(SB)") || strings.Contains(instruction, "CALL syscall.RawSyscall6(SB)")
+// findSyscallIDx86_64 goes back from the call until it finds an instruction with the format
+// MOVQ $ID, 0(SP), which is the one that pushes the syscall ID onto the base address
+// at the SP register
+func findSyscallIDx86_64(previouInstructions []string, curPos int) (int64, error) {
+	i := 0
+
+	for i < previousInstructionsBufferSize {
+		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
+
+		isMOVQ := strings.Index(instruction, "MOVQ") != -1
+		isBaseSPAddress := strings.Index(instruction, ", 0(SP)") != -1
+
+		if isMOVQ && isBaseSPAddress {
+			syscallIDBeginning := strings.Index(instruction, "$")
+			if syscallIDBeginning == -1 {
+				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
+			}
+			syscallIDEnd := strings.Index(instruction, ", 0(SP)")
+
+			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
+			id, err := strconv.ParseInt(hex, 0, 64)
+
+			if err != nil {
+				return -1, fmt.Errorf("Error parsing hex id: %v", err)
+			}
+			return id, nil
+		}
+		i++
+		curPos--
+	}
+	return -1, fmt.Errorf("Failed to find syscall ID")
 }
 
-func isRuntimeSyscall(instruction, currentFunction string) bool {
-	// there are SYSCALL instructions in each of the 4 functions on the syscall package, so we ignore those
-	return strings.Contains(instruction, "SYSCALL") && !strings.Contains(currentFunction, "syscall.Syscall") &&
-		!strings.Contains(currentFunction, "syscall.RawSyscall")
+// findSyscallIDx86 goes back from the call until it finds an instruction with the format
+// MOVL $ID, 0(SP), which is the one that pushes the syscall ID onto the base address
+// at the SP register
+func findSyscallIDx86(previouInstructions []string, curPos int) (int64, error) {
+	i := 0
+	for i < previousInstructionsBufferSize {
+		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
+
+		isMOVL := strings.Index(instruction, "MOVL") != -1
+		isBaseSPAddress := strings.Index(instruction, ", 0(SP)") != -1
+
+		if isMOVL && isBaseSPAddress {
+			syscallIDBeginning := strings.Index(instruction, "$")
+			if syscallIDBeginning == -1 {
+				return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
+			}
+			syscallIDEnd := strings.Index(instruction, ", 0(SP)")
+
+			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
+			id, err := strconv.ParseInt(hex, 0, 64)
+
+			if err != nil {
+				return -1, fmt.Errorf("Error parsing hex id: %v", err)
+			}
+			return id, nil
+		}
+		i++
+		curPos--
+	}
+	return -1, fmt.Errorf("Failed to find syscall ID")
 }
 
-// Got these from https://github.com/moby/moby/issues/22252
-// Even if they are not found in the binary, they are needed for starting the container
-func getDefaultSyscalls() map[int64]bool {
-	syscalls := make(map[int64]bool)
-	// futex
-	syscalls[202] = true
-	// stat
-	syscalls[4] = true
-	// execve
-	syscalls[59] = true
+func findSyscallIDARM(previouInstructions []string, curPos int) (int64, error) {
+	i := 0
 
-	return syscalls
+	for i < previousInstructionsBufferSize {
+		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
+
+		isMOVW := strings.Index(instruction, "MOVW") != -1
+		isBaseSPAddress := strings.Index(instruction, ", R0") != -1
+		syscallIDBeginning := strings.Index(instruction, "$")
+
+		if isMOVW && isBaseSPAddress && (syscallIDBeginning != -1) {
+			syscallIDEnd := strings.Index(instruction, ", R0")
+
+			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
+			id, err := strconv.ParseInt(hex, 0, 64)
+
+			if err != nil {
+				return -1, fmt.Errorf("Error parsing hex id: %v", err)
+			}
+			return id, nil
+		}
+		i++
+		curPos--
+	}
+	return -1, fmt.Errorf("Failed to find syscall ID")
 }
 
-func main() {
-	flag.Parse()
-
-	if len(flag.Args()) < 2 {
-		fmt.Println("Usage: go2seccomp /path/to/binary /path/to/profile.json")
-		os.Exit(1)
-	}
-	binaryPath := flag.Args()[0]
-	profilePath := flag.Args()[1]
-	disassambled, err := os.Create("disassembled.asm")
-	if err != nil {
-		log.Fatalf("Failed to disassembling output file, reason: %v", err)
-	}
-	defer disassambled.Close()
-	defer os.Remove("disassembled.asm")
-
-	fmt.Printf("Using go tool objdump to disassemble %v\n", binaryPath)
-	cmd := exec.Command("go", "tool", "objdump", binaryPath)
-	cmd.Stdout = disassambled
-	err = cmd.Run()
-	if err != nil {
-		log.Fatalf("Couldn't run go tool objdump: %v\n", err)
-	}
-
-	// Point to the beginning of the disassembled binary to start looking for syscalls
-	disassambled.Seek(0, 0)
+func getSyscallList(disassambled *os.File, arch specs.Arch) []string {
 
 	scanner := bufio.NewScanner(disassambled)
+
 	// keep a few of the past instructions in a buffer so we can look back and find the syscall ID
 	previousInstructions := make([]string, previousInstructionsBufferSize)
 	lineCount := 0
-	syscalls := getDefaultSyscalls()
+	syscalls := getDefaultSyscalls(arch)
 
 	fmt.Println("Scanning disassembled binary for syscall IDs")
+
 	currentFunction := ""
 	for scanner.Scan() {
 		instruction := scanner.Text()
@@ -173,8 +238,8 @@ func main() {
 		}
 
 		// function call to one of the 4 functions from the syscall package
-		if isSyscallPkgCall(instruction) {
-			id, err := findSyscallID(previousInstructions, lineCount)
+		if isSyscallPkgCall(arch, instruction) {
+			id, err := findSyscallID(arch, previousInstructions, lineCount)
 			if err != nil {
 				log.Printf("Failed to find syscall ID for line %v: %v, reason: %v\n", lineCount+1, instruction, err)
 				lineCount++
@@ -183,8 +248,8 @@ func main() {
 			syscalls[id] = true
 		}
 		// the runtime package doesn't use the functions on the syscall package, instead it uses SYSCALL directly
-		if isRuntimeSyscall(instruction, currentFunction) {
-			id, err := findRuntimeSyscallID(previousInstructions, lineCount)
+		if isRuntimeSyscall(arch, instruction, currentFunction) {
+			id, err := findRuntimeSyscallID(arch, previousInstructions, lineCount)
 			if err != nil {
 				log.Printf("Failed to find syscall ID for line %v: \n\t%v\n\treason: %v\n", lineCount+1, instruction, err)
 				lineCount++
@@ -197,8 +262,9 @@ func main() {
 
 	syscallsList := make([]string, len(syscalls))
 	i := 0
+
 	for id := range syscalls {
-		name, ok := syscallIDtoName[id]
+		name, ok := syscallIDtoName[arch][id]
 		if !ok {
 			fmt.Printf("Sycall ID %v not available on the ID->name map\n", id)
 		} else {
@@ -206,28 +272,39 @@ func main() {
 			i++
 		}
 	}
+
 	sort.Strings(syscallsList)
-	fmt.Printf("Syscalls detected (total: %v): %v\n", len(syscalls), syscallsList)
 
-	profile := specs.LinuxSeccomp{
-		DefaultAction: specs.ActErrno,
-		Architectures: []specs.Arch{specs.ArchX86_64},
-		Syscalls: []specs.LinuxSyscall{
-			specs.LinuxSyscall{
-				Names:  syscallsList,
-				Action: specs.ActAllow,
-			},
-		},
+	return syscallsList
+}
+
+func main() {
+	flag.Parse()
+
+	if len(flag.Args()) < 2 {
+		fmt.Println("Usage: go2seccomp /path/to/binary /path/to/profile.json")
+		os.Exit(1)
 	}
 
-	profileFile, err := os.Create(profilePath)
-	if err != nil {
-		log.Fatalf("Failed to create seccomp profile: %v", err)
-	}
-	defer profileFile.Close()
+	binaryPath := flag.Args()[0]
+	profilePath := flag.Args()[1]
 
-	enc := json.NewEncoder(profileFile)
-	enc.SetIndent("", "    ")
-	enc.Encode(profile)
-	fmt.Printf("Saved seccomp profile at %v\n", profilePath)
+	f := openElf(binaryPath)
+
+	if !isGoBinary(f) {
+		fmt.Println(binaryPath, "doesn't seems to be a Go binary")
+		os.Exit(1)
+	}
+
+	arch := getArch(f)
+
+	disassambled := disassamble(binaryPath)
+	defer disassambled.Close()
+	defer os.Remove("disassembled.asm")
+
+	syscallsList := getSyscallList(disassambled, arch)
+
+	fmt.Printf("Syscalls detected (total: %v): %v\n", len(syscallsList), syscallsList)
+
+	writeProfile(syscallsList, arch, profilePath)
 }
