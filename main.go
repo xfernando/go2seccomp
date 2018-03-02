@@ -195,15 +195,12 @@ func findSyscallIDARM(previouInstructions []string, curPos int) (int64, error) {
 
 	for i < previousInstructionsBufferSize {
 		instruction := previouInstructions[curPos%previousInstructionsBufferSize]
-		fmt.Println(instruction)
+
 		isMOVW := strings.Index(instruction, "MOVW") != -1
 		isBaseSPAddress := strings.Index(instruction, ", R0") != -1
-		// fmt.Println("isMOVW : ", isMOVW, "isBaseSPAddress : ", isBaseSPAddress)
 		syscallIDBeginning := strings.Index(instruction, "$")
+
 		if isMOVW && isBaseSPAddress && (syscallIDBeginning != -1) {
-			// if (syscallIDBeginning == -1 ){
-			// 	return -1, fmt.Errorf("Failed to find syscall ID on line: %v", instruction)
-			// }
 			syscallIDEnd := strings.Index(instruction, ", R0")
 
 			hex := instruction[syscallIDBeginning+1 : syscallIDEnd]
@@ -229,8 +226,6 @@ func getSyscallList(disassambled *os.File, arch specs.Arch) []string {
 	lineCount := 0
 	syscalls := getDefaultSyscalls(arch)
 
-	// j := getCallOpByArch(arch)
-
 	fmt.Println("Scanning disassembled binary for syscall IDs")
 
 	currentFunction := ""
@@ -243,7 +238,7 @@ func getSyscallList(disassambled *os.File, arch specs.Arch) []string {
 		}
 
 		// function call to one of the 4 functions from the syscall package
-		if isSyscallPkgCall(instruction) {
+		if isSyscallPkgCall(arch, instruction) {
 			id, err := findSyscallID(arch, previousInstructions, lineCount)
 			if err != nil {
 				log.Printf("Failed to find syscall ID for line %v: %v, reason: %v\n", lineCount+1, instruction, err)
