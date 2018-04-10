@@ -250,7 +250,7 @@ would be discovered. Now even syscalls made in C code through `cgo` should be di
 
 When I tried running containers with profiles `go2seccomp` generated they didn't start with different error messages at times (even the basic helloworld).
 After some digging, I found this [issue](https://github.com/moby/moby/issues/22252) on the moby project, where I found that some syscalls
-need to be enabled on the seccomp profile because docker needs them to start the container, even if they're needed for the binary the container runs.
+need to be enabled on the seccomp profile because docker needs them to start the container, even if they're not needed for the binary the container runs.
 
 The syscalls that need to be enabled by default are:
 
