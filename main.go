@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"github.com/opencontainers/runtime-spec/specs-go"
 	"log"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // TODO add a verbose flag and do a proper verbose mode
@@ -237,7 +238,7 @@ func getSyscallList(disassambled *os.File, arch specs.Arch) []string {
 			currentFunction = parseFunctionName(instruction)
 		}
 
-		// function call to one of the 4 functions from the syscall package
+		// function call to one of the 5 functions from the syscall package
 		if isSyscallPkgCall(arch, instruction) {
 			id, err := findSyscallID(arch, previousInstructions, lineCount)
 			if err != nil {

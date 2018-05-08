@@ -4,11 +4,12 @@ import (
 	"debug/elf"
 	"encoding/json"
 	"fmt"
-	"github.com/opencontainers/runtime-spec/specs-go"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func openElf(filename string) *elf.File {
@@ -132,7 +133,8 @@ func parseFunctionName(instruction string) string {
 func isSyscallPkgCall(arch specs.Arch, instruction string) bool {
 	j := getCallOpByArch(arch)
 	return strings.Contains(instruction, j+"syscall.Syscall(SB)") || strings.Contains(instruction, j+"syscall.Syscall6(SB)") ||
-		strings.Contains(instruction, j+"syscall.RawSyscall(SB)") || strings.Contains(instruction, j+"syscall.RawSyscall6(SB)")
+		strings.Contains(instruction, j+"syscall.RawSyscall(SB)") || strings.Contains(instruction, j+"syscall.RawSyscall6(SB)") ||
+		strings.Contains(instruction, j+"syscall.rawVforkSyscall(SB)")
 }
 
 func isRuntimeSyscall(arch specs.Arch, instruction, currentFunction string) bool {
@@ -142,10 +144,11 @@ func isRuntimeSyscall(arch specs.Arch, instruction, currentFunction string) bool
 	case specs.ArchX86:
 		isRuntimeSC = (strings.Contains(instruction, "INT $0x80") || strings.Contains(instruction, "SYSENTER"))
 	case specs.ArchX86_64:
-		// there are SYSCALL instructions in each of the 4 functions on the syscall package, so we ignore those
+		// there are SYSCALL instructions in each of the 5 functions on the syscall package, so we ignore those
 		isRuntimeSC = strings.Contains(instruction, "SYSCALL") &&
 			!strings.Contains(currentFunction, "syscall.Syscall") &&
-			!strings.Contains(currentFunction, "syscall.RawSyscall")
+			!strings.Contains(currentFunction, "syscall.RawSyscall") &&
+			!strings.Contains(currentFunction, "syscall.rawVforkSyscall")
 	case specs.ArchARM:
 		isRuntimeSC = strings.Contains(instruction, "SVC $0") || strings.Contains(instruction, "SWI $0")
 	}
